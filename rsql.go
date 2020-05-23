@@ -171,10 +171,13 @@ func (parser *Parser) ToMongoQueryString(s string) (string, error) {
 			res = append(res, ands[0])
 		}
 	}
-	if len(res) > 1 {
-		s = fmt.Sprintf(`{ "$or": [ %s ] }`, strings.Join(res, ", "))
-	} else {
+	switch len(res){
+	case 0:
+		s = "{ }"
+	case 1:
 		s = res[0]
+	default:
+		s = fmt.Sprintf(`{ "$or": [ %s ] }`, strings.Join(res, ", "))
 	}
 	// url decode
 	s = decodeSpecial(s)
@@ -261,7 +264,10 @@ func findOperations(s string) ([][]int, error) {
 		// remember the current character for the next iteration
 		before = c
 	}
-	res = append(res, []int{start, len(s) - 1})
+	end := len(s) - 1
+	if start < end {
+		res = append(res, []int{start, len(s) - 1})
+	}
 	return res, nil
 }
 

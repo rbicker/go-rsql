@@ -268,6 +268,11 @@ func TestParser_ToMongoQueryString(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "empty filter",
+			s: "",
+			want: "{ }",
+		},
+		{
 			name: "==",
 			s:    "a==1",
 			want: `{ "a": { "$eq": 1 } }`,

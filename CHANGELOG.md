@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2020-05-23
+### Added
+* added the ability to handle empty rsql strings
+
 ## [0.0.1] - 2020-05-16
 ### Added
 * parser to parse rsql string to mongodb json filter string 
