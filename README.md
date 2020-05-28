@@ -68,6 +68,7 @@ package main
 
 import (
 
+"fmt"
 "github.com/rbicker/go-rsql"
 "log"
 )
@@ -76,14 +77,16 @@ func main(){
     // create a custom operator for "exists"- and "all"-operations
     customOperators := []rsql.Operator{
         {
-            Operator:      "=ex=",
-            MongoOperator: "$exists",
-            ListType:      false,
+            Operator:       "=ex=",
+            MongoFormatter: func (key, value string) string {
+                return fmt.Sprintf(`{ "%s": { "$exists": %s } }`, key, value)
+            },
         },
         {
-            Operator:      "=all=",
-            MongoOperator: "$all",
-            ListType:      true,
+            Operator:       "=all=",
+            MongoFormatter: func(key, value string) string {
+                return fmt.Sprintf(`{ "%s": { "$all": [ %s ] } }`, key, value[1:len(value)-1])
+            },
         },
     }
     var opts []func(*rsql.Parser) error

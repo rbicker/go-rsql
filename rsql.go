@@ -25,9 +25,8 @@ var reOperator = regexp.MustCompile(`([!=])[^=]*=`)
 // of the Operator and if it is a list Operator or not.
 // Operators must match regex reOperator: `(!|=)[^=]*=`
 type Operator struct {
-	Operator      string
-	MongoOperator string
-	ListType      bool
+	Operator       string
+	MongoFormatter func(key, value string) string
 }
 
 // Parser represents a RSQL parser.
@@ -49,43 +48,51 @@ func NewParser(options ...func(*Parser) error) (Parser, error) {
 	var operators = []Operator{
 		{
 			"==",
-			"$eq",
-			false,
+			func(key, value string) string {
+				return fmt.Sprintf(`{ "%s": { "$eq": %s } }`, key, value)
+			},
 		},
 		{
 			"!=",
-			"$ne",
-			false,
+			func(key, value string) string {
+				return fmt.Sprintf(`{ "%s": { "$ne": %s } }`, key, value)
+			},
 		},
 		{
 			"=gt=",
-			"$gt",
-			false,
+			func(key, value string) string {
+				return fmt.Sprintf(`{ "%s": { "$gt": %s } }`, key, value)
+			},
 		},
 		{
 			"=ge=",
-			"$gte",
-			false,
+			func(key, value string) string {
+				return fmt.Sprintf(`{ "%s": { "$gte": %s } }`, key, value)
+			},
 		},
 		{
 			"=lt=",
-			"$lt",
-			false,
+			func(key, value string) string {
+				return fmt.Sprintf(`{ "%s": { "$lt": %s } }`, key, value)
+			},
 		},
 		{
 			"=le=",
-			"$lte",
-			false,
+			func(key, value string) string {
+				return fmt.Sprintf(`{ "%s": { "$lte": %s } }`, key, value)
+			},
 		},
 		{
 			"=in=",
-			"$in",
-			true,
+			func(key, value string) string {
+				return fmt.Sprintf(`{ "%s": { "in": %s } }`, key, value)
+			},
 		},
 		{
 			"=out=",
-			"$nin",
-			true,
+			func(key, value string) string {
+				return fmt.Sprintf(`{ "%s": { "nin": %s } }`, key, value)
+			},
 		},
 	}
 	parser.operators = append(parser.operators, operators...)
@@ -122,7 +129,7 @@ func (parser *Parser) ToMongoQueryString(s string) (string, error) {
 		return "", fmt.Errorf("error while looking for ii: %w", err)
 	}
 	// regex to match identifier within operation, before the equal or expression mark
-	var reId = regexp.MustCompile(`^[^=!]+`)
+	var reKey = regexp.MustCompile(`^[^=!]+`)
 	// regex to match value within the operation, after the equal sign
 	var reValue = regexp.MustCompile(`[^=]+$`)
 	// slices to store AND and OR parts
@@ -132,23 +139,16 @@ func (parser *Parser) ToMongoQueryString(s string) (string, error) {
 	for i, loc := range ii {
 		operation := strings.Trim(s[loc[0]:loc[1]+1], " ")
 		operator := reOperator.FindString(operation)
-		id := reId.FindString(operation)
+		key := reKey.FindString(operation)
 		value := reValue.FindString(operation)
-		if operator == "" || id == "" || value == "" {
+		if operator == "" || key == "" || value == "" {
 			return s, fmt.Errorf("incomplete operation '%s'", operation)
 		}
 		// parse operation
 		var replacement string
 		for _, op := range parser.operators {
 			if operator == op.Operator {
-				if op.ListType {
-					if value[0:1] != "(" || value[len(value)-1:] != ")" {
-						return "", fmt.Errorf("invalid or missing parentheses in list value '%s' in '%s'", value, operation)
-					}
-					replacement = fmt.Sprintf(`{ "%s": { "%s": [ %s ] } }`, id, op.MongoOperator, value[1:len(value)-1])
-				} else {
-					replacement = fmt.Sprintf(`{ "%s": { "%s": %s } }`, id, op.MongoOperator, value)
-				}
+				replacement = op.MongoFormatter(key, value)
 				break
 			}
 		}
@@ -171,7 +171,7 @@ func (parser *Parser) ToMongoQueryString(s string) (string, error) {
 			res = append(res, ands[0])
 		}
 	}
-	switch len(res){
+	switch len(res) {
 	case 0:
 		s = "{ }"
 	case 1:
@@ -237,7 +237,7 @@ func decodeSpecial(s string) string {
 // Every location will have two integers, representing the start and end of the operation.
 func findOperations(s string) ([][]int, error) {
 	var res [][]int
-	start := 0
+	var start, counter int
 	var list bool
 	var before string
 	runes := []rune(s)
@@ -245,13 +245,18 @@ func findOperations(s string) ([][]int, error) {
 		c := string(r)
 		// handle lists
 		if c == "(" && list {
-			return nil, fmt.Errorf("found nested parentheses in list while parsing '%s'", s)
+			// increase counter if nested parentheses
+			counter++
 		}
 		if c == "(" && before == "=" {
 			list = true
 		}
 		if c == ")" && list {
-			list = false
+			if counter == 0 {
+				list = false
+			} else {
+				counter--
+			}
 		}
 		// found operation
 		if c == ";" || (c == "," && !list) {
@@ -281,19 +286,23 @@ func findORs(s string, n int) ([][]int, error) {
 	var res [][]int
 	var list bool
 	var before string
-	start, found := 0, 0
+	var start, found, nestedCounter int
 	runes := []rune(s)
 	for i, r := range runes {
 		c := string(r)
 		// handle lists
 		if c == "(" && list {
-			return nil, fmt.Errorf("found nested parentheses in list while parsing '%s'", s)
+			nestedCounter++
 		}
 		if c == "(" && before == "=" {
 			list = true
 		}
 		if c == ")" && list {
-			list = false
+			if nestedCounter == 0 {
+				list = false
+			} else {
+				nestedCounter--
+			}
 		}
 		// found OR
 		if c == "," && !list {
@@ -323,7 +332,7 @@ func findOuterParentheses(s string, n int) ([][]int, error) {
 		return nil, fmt.Errorf("number of opening and closing parentheses dont match")
 	}
 	start := -1
-	var countFound, countOpening, countClosing int
+	var countFound, countOpening, countClosing, nestedCounter int
 	var list bool
 	var before string
 	runes := []rune(s)
@@ -332,7 +341,8 @@ func findOuterParentheses(s string, n int) ([][]int, error) {
 		// found opening
 		if c == "(" {
 			if list {
-				return nil, fmt.Errorf("found nested parentheses in list while parsing '%s'", s)
+				nestedCounter++
+				continue
 			}
 			if before != "=" {
 				if start < 0 {
@@ -346,7 +356,11 @@ func findOuterParentheses(s string, n int) ([][]int, error) {
 		// found closing
 		if c == ")" && start >= 0 {
 			if list {
-				list = false
+				if nestedCounter == 0 {
+					list = false
+				} else {
+					nestedCounter--
+				}
 			} else {
 				countClosing += 1
 			}

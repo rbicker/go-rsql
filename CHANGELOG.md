@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2020-05-28
+### Changed
+* Custom Operators can now define MongoFormatter as a function instead of a MongoOperator string to increase the flexibility
+### Fixed
+* Allow nested parentheses, so it is possible to define filters like: userIds=in=(ObjectId("xxx"),ObjectId("yyy"))
+
 ## [0.0.2] - 2020-05-23
 ### Added
 * added the ability to handle empty rsql strings

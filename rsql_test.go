@@ -1,6 +1,7 @@
 package rsql
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -225,9 +226,14 @@ func Test_findOuterParentheses(t *testing.T) {
 			},
 		},
 		{
-			name:    "containing invalid list",
-			s:       "(y==2),x=in=(1,(2),3)",
-			wantErr: true,
+			name: "containing invalid list",
+			s:    "(y==2),x=in=(1,(2),3)",
+			want: [][]int{
+				{
+					0,
+					5,
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -263,13 +269,8 @@ func TestParser_ToMongoQueryString(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "invalid complex Operator",
-			s:       "a=in='x','y','z'",
-			wantErr: true,
-		},
-		{
 			name: "empty filter",
-			s: "",
+			s:    "",
 			want: "{ }",
 		},
 		{
@@ -312,9 +313,10 @@ func TestParser_ToMongoQueryString(t *testing.T) {
 			s:    "a=ex=true",
 			customOperators: []Operator{
 				{
-					Operator:      "=ex=",
-					MongoOperator: "$exists",
-					ListType:      false,
+					Operator: "=ex=",
+					MongoFormatter: func(key, value string) string {
+						return fmt.Sprintf(`{ "%s": { "$exists": %s } }`, key, value)
+					},
 				},
 			},
 			want: `{ "a": { "$exists": true } }`,
@@ -324,9 +326,11 @@ func TestParser_ToMongoQueryString(t *testing.T) {
 			s:    "tags=all=('waterproof','rechargeable')",
 			customOperators: []Operator{
 				{
-					Operator:      "=all=",
-					MongoOperator: "$all",
-					ListType:      true,
+					Operator: "=all=",
+					MongoFormatter: func(key, value string) string {
+
+						return fmt.Sprintf(`{ "%s": { "$all": [ %s ] } }`, key, value[1:len(value)-1])
+					},
 				},
 			},
 			want: `{ "tags": { "$all": [ 'waterproof','rechargeable' ] } }`,
@@ -371,11 +375,19 @@ func Test_findORs(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "nested parentheses in list operation",
-			s:       "(a==1),(b=in=(1,(2),3))",
-			n:       -1,
-			want:    nil,
-			wantErr: true,
+			name: "nested parentheses in list operation",
+			s:    `(a==1),(_id=in=(ObjectID("xxx"),(ObjectID("yyy"))`,
+			n:    -1,
+			want: [][]int{
+				{
+					0,
+					5,
+				},
+				{
+					7,
+					48,
+				},
+			},
 		},
 		{
 			name: "simple or",
@@ -436,10 +448,18 @@ func Test_findOperations(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "nested parentheses in list",
-			s:       "a==1,b=in=(1,(2),3)",
-			want:    nil,
-			wantErr: true,
+			name: "nested parentheses in list",
+			s:    "a==1,b=in=(1,(2),3)",
+			want: [][]int{
+				{
+					0,
+					3,
+				},
+				{
+					5,
+					18,
+				},
+			},
 		},
 		{
 			name: "simple",
@@ -466,6 +486,20 @@ func Test_findOperations(t *testing.T) {
 				{
 					5,
 					16,
+				},
+			},
+		},
+		{
+			name: "object id",
+			s:    `a==1,_id==ObjectID("xxx")`,
+			want: [][]int{
+				{
+					0,
+					3,
+				},
+				{
+					5,
+					24,
 				},
 			},
 		},
