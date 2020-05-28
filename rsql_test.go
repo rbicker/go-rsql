@@ -376,7 +376,7 @@ func Test_findORs(t *testing.T) {
 		},
 		{
 			name: "nested parentheses in list operation",
-			s:    `(a==1),(_id=in=(ObjectID("xxx"),(ObjectID("yyy"))`,
+			s:    `(a==1),(_id=in=(ObjectId("xxx"),(ObjectId("yyy"))`,
 			n:    -1,
 			want: [][]int{
 				{
@@ -491,7 +491,7 @@ func Test_findOperations(t *testing.T) {
 		},
 		{
 			name: "object id",
-			s:    `a==1,_id==ObjectID("xxx")`,
+			s:    `a==1,_id==ObjectId("xxx")`,
 			want: [][]int{
 				{
 					0,
