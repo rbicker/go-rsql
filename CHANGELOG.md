@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2020-05-29
+### Changed
+* mongodb related logical and query operators are now provided as "formatter-functions".
+This makes the parser much more flexible, however the `Mongo()`-function needs to be passed to `NewParser()` from now on. 
+
 ## [0.1.0] - 2020-05-28
 ### Changed
 * Custom Operators can now define MongoFormatter as a function instead of a MongoOperator string to increase the flexibility

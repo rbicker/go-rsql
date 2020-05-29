@@ -18,85 +18,125 @@ var specialEncode = map[string]string{
 }
 
 // regex to match Operator within operation
-var reOperator = regexp.MustCompile(`([!=])[^=]*=`)
+var reOperator = regexp.MustCompile(`([!=])[^=()]*=`)
 
 // Operator represents a query Operator.
 // It defines the Operator itself, the mongodb representation
 // of the Operator and if it is a list Operator or not.
-// Operators must match regex reOperator: `(!|=)[^=]*=`
+// Operators must match regex reOperator: `(!|=)[^=()]*=`
 type Operator struct {
-	Operator       string
-	MongoFormatter func(key, value string) string
+	Operator  string
+	Formatter func(key, value string) string
 }
 
 // Parser represents a RSQL parser.
 type Parser struct {
-	operators []Operator
+	operators    []Operator
+	andFormatter func(ss []string) string
+	orFormatter  func(ss []string) string
 }
 
 // NewParser returns a new rsql server.
-func NewParser(options ...func(*Parser) error) (Parser, error) {
+func NewParser(options ...func(*Parser) error) (*Parser, error) {
 	// create parser
 	var parser = Parser{}
 	// run functional options
 	for _, op := range options {
 		err := op(&parser)
 		if err != nil {
-			return parser, fmt.Errorf("setting option failed: %w", err)
+			return nil, fmt.Errorf("setting option failed: %w", err)
 		}
 	}
-	var operators = []Operator{
-		{
-			"==",
-			func(key, value string) string {
-				return fmt.Sprintf(`{ "%s": { "$eq": %s } }`, key, value)
-			},
-		},
-		{
-			"!=",
-			func(key, value string) string {
-				return fmt.Sprintf(`{ "%s": { "$ne": %s } }`, key, value)
-			},
-		},
-		{
-			"=gt=",
-			func(key, value string) string {
-				return fmt.Sprintf(`{ "%s": { "$gt": %s } }`, key, value)
-			},
-		},
-		{
-			"=ge=",
-			func(key, value string) string {
-				return fmt.Sprintf(`{ "%s": { "$gte": %s } }`, key, value)
-			},
-		},
-		{
-			"=lt=",
-			func(key, value string) string {
-				return fmt.Sprintf(`{ "%s": { "$lt": %s } }`, key, value)
-			},
-		},
-		{
-			"=le=",
-			func(key, value string) string {
-				return fmt.Sprintf(`{ "%s": { "$lte": %s } }`, key, value)
-			},
-		},
-		{
-			"=in=",
-			func(key, value string) string {
-				return fmt.Sprintf(`{ "%s": { "in": %s } }`, key, value)
-			},
-		},
-		{
-			"=out=",
-			func(key, value string) string {
-				return fmt.Sprintf(`{ "%s": { "nin": %s } }`, key, value)
-			},
-		},
+	if parser.andFormatter == nil {
+		return nil, fmt.Errorf("AND-formatter is not defined")
 	}
-	parser.operators = append(parser.operators, operators...)
-	return parser, nil
+	if parser.orFormatter == nil {
+		return nil, fmt.Errorf("OR-formatter is not defined")
+	}
+	return &parser, nil
+}
+
+// Mongo adds the default mongo operators to the parser
+func Mongo() func(parser *Parser) error {
+	return func(parser *Parser) error {
+		// operators
+		var operators = []Operator{
+			{
+				"==",
+				func(key, value string) string {
+					return fmt.Sprintf(`{ "%s": { "$eq": %s } }`, key, value)
+				},
+			},
+			{
+				"!=",
+				func(key, value string) string {
+					return fmt.Sprintf(`{ "%s": { "$ne": %s } }`, key, value)
+				},
+			},
+			{
+				"=gt=",
+				func(key, value string) string {
+					return fmt.Sprintf(`{ "%s": { "$gt": %s } }`, key, value)
+				},
+			},
+			{
+				"=ge=",
+				func(key, value string) string {
+					return fmt.Sprintf(`{ "%s": { "$gte": %s } }`, key, value)
+				},
+			},
+			{
+				"=lt=",
+				func(key, value string) string {
+					return fmt.Sprintf(`{ "%s": { "$lt": %s } }`, key, value)
+				},
+			},
+			{
+				"=le=",
+				func(key, value string) string {
+					return fmt.Sprintf(`{ "%s": { "$lte": %s } }`, key, value)
+				},
+			},
+			{
+				"=in=",
+				func(key, value string) string {
+					// remove parentheses
+					value = value[1 : len(value)-1]
+					return fmt.Sprintf(`{ "%s": { "$in": %s } }`, key, value)
+				},
+			},
+			{
+				"=out=",
+				func(key, value string) string {
+					// remove parentheses
+					value = value[1 : len(value)-1]
+					return fmt.Sprintf(`{ "%s": { "$nin": %s } }`, key, value)
+				},
+			},
+		}
+		parser.operators = append(parser.operators, operators...)
+		// AND formatter
+		parser.andFormatter = func(ss []string) string {
+			if len(ss) > 1 {
+				return fmt.Sprintf(`{ "$and": [ %s ] }`, strings.Join(ss, ", "))
+			}
+			if len(ss) == 0 {
+				return ""
+			}
+			return ss[0]
+		}
+		// OR formatter
+		parser.orFormatter = func(ss []string) string {
+			if len(ss) > 1 {
+				return fmt.Sprintf(`{ "$or": [ %s ] }`, strings.Join(ss, ", "))
+			}
+			if len(ss) == 0 {
+				return "{ }"
+			}
+			return ss[0]
+		}
+		return nil
+	}
 }
 
 // WithOperator adds custom operators to the parser
@@ -112,107 +152,75 @@ func WithOperators(operators ...Operator) func(parser *Parser) error {
 	}
 }
 
-// ToMongoQueryString takes the given rsql string and converts it to a mongo query json string.
-func (parser *Parser) ToMongoQueryString(s string) (string, error) {
-	// url encode special strings
-	s = encodeSpecial(s)
-	if strings.Count(s, "(") != strings.Count(s, ")") {
-		return "", fmt.Errorf("number of opening and closing parentheses don not match")
-	}
-	s, err := spreadParentheses(s)
-	if err != nil {
-		return "", fmt.Errorf("unable to spread parentheses: %w", err)
-	}
-	// handle operations
-	ii, err := findOperations(s)
-	if err != nil {
-		return "", fmt.Errorf("error while looking for ii: %w", err)
-	}
+// Process takes the given string and processes it using parser's operators.
+func (parser *Parser) Process(s string) (string, error) {
 	// regex to match identifier within operation, before the equal or expression mark
 	var reKey = regexp.MustCompile(`^[^=!]+`)
 	// regex to match value within the operation, after the equal sign
 	var reValue = regexp.MustCompile(`[^=]+$`)
-	// slices to store AND and OR parts
-	var ors [][]string
-	var ands []string
-	// loop through operations
-	for i, loc := range ii {
-		operation := strings.Trim(s[loc[0]:loc[1]+1], " ")
-		operator := reOperator.FindString(operation)
-		key := reKey.FindString(operation)
-		value := reValue.FindString(operation)
-		if operator == "" || key == "" || value == "" {
-			return s, fmt.Errorf("incomplete operation '%s'", operation)
+	// get ORs
+	locations, err := findORs(s, -1)
+	if err != nil {
+		return "", fmt.Errorf("unable to find ORs: %w", err)
+	}
+	var ors []string
+	for _, loc := range locations {
+		start, end := loc[0], loc[1]
+		content := s[start:end]
+		// handle ANDs
+		locs, err := findANDs(content, -1)
+		if err != nil {
+			return "", fmt.Errorf("unable to find ANDs: %w", err)
 		}
-		// parse operation
-		var replacement string
-		for _, op := range parser.operators {
-			if operator == op.Operator {
-				replacement = op.MongoFormatter(key, value)
-				break
+		var ands []string
+		for _, l := range locs {
+			start, end = l[0], l[1]
+			content := content[start:end]
+			// handle parentheses
+			parentheses, err := findOuterParentheses(content, -1)
+			if err != nil {
+				return "", fmt.Errorf("unable to find parentheses: %w", err)
 			}
+			for _, p := range parentheses {
+				start, end := p[0], p[1]
+				content := content[start+1 : end]
+				// handle nested
+				replacement, err := parser.Process(content)
+				if err != nil {
+					return "", err
+				}
+				ands = append(ands, replacement)
+			}
+			if len(parentheses) > 0 {
+				// location is already fully handled
+				continue
+			}
+			// if no parentheses, it should be an operation
+			operator := reOperator.FindString(content)
+			key := reKey.FindString(content)
+			value := reValue.FindString(content)
+			if operator == "" || key == "" || value == "" {
+				return s, fmt.Errorf("incomplete operation '%s'", content)
+			}
+			// parse operation
+			var res string
+			for _, op := range parser.operators {
+				if operator == op.Operator {
+					res = op.Formatter(key, value)
+					break
+				}
+			}
+			if res == "" {
+				return "", fmt.Errorf("unknown operator '%s' in '%s'", operator, content)
+			}
+			ands = append(ands, res)
 		}
-		if replacement == "" {
-			return "", fmt.Errorf("unknown Operator '%s' in '%s'", operator, operation)
-		}
-		ands = append(ands, replacement)
-		// when last index or if split by OR
-		if i == len(ii)-1 || s[loc[1]+1:loc[1]+2] == "," {
-			ors = append(ors, ands)
-			ands = nil // reset
-		}
+		// replacement for AND-block
+		replacement := parser.andFormatter(ands)
+		ors = append(ors, replacement)
 	}
-	// handle ANDs and ORs
-	var res []string
-	for _, ands := range ors {
-		if len(ands) > 1 {
-			res = append(res, fmt.Sprintf(`{ "$and": [ %s ] }`, strings.Join(ands, ", ")))
-		} else {
-			res = append(res, ands[0])
-		}
-	}
-	switch len(res) {
-	case 0:
-		s = "{ }"
-	case 1:
-		s = res[0]
-	default:
-		s = fmt.Sprintf(`{ "$or": [ %s ] }`, strings.Join(res, ", "))
-	}
-	// url decode
-	s = decodeSpecial(s)
-	return s, nil
-}
-
-// combine combines all the given string in a logical multiplication.
-func combine(groups ...string) string {
-	l := len(groups)
-	// split task in groups of 2
-	for l > 2 {
-		sub := combine(groups[0:2]...)
-		groups = append([]string{sub}, groups[2:]...)
-		l = len(groups)
-	}
-	// if done
-	if l == 1 {
-		return groups[0]
-	}
-	// from this point on,
-	// we are sure that we are dealing with
-	// 2 groups
-	elems := strings.Split(groups[0], ",")
-	other := strings.Split(groups[1], ",")
-	var comb []string // combinations
-	// loop through first groups elements
-	for i := 0; i < len(elems); i++ {
-		e := elems[i]
-		// loop through other groups elements
-		for j := 0; j < len(other); j++ {
-			o := other[j]
-			comb = append(comb, fmt.Sprintf("%s;%s", e, o))
-		}
-	}
-	return strings.Join(comb, ",")
+	// replace OR-block and return
+	return parser.orFormatter(ors), nil
 }
 
 // encodeSpecial encodes all the special strings
@@ -233,45 +241,61 @@ func decodeSpecial(s string) string {
 	return s
 }
 
-// findOperations finds the locations of all the operations in the given string.
-// Every location will have two integers, representing the start and end of the operation.
-func findOperations(s string) ([][]int, error) {
+// findParts finds the locations of separated blocks while considering parentheses.
+// If n is greater than 0, n parts (from the left) are returned at most.
+func findParts(s string, n int, separators ...string) ([][]int, error) {
+	if len(s) == 0 {
+		return nil, nil
+	}
+	// validations
+	if len(separators) == 0 {
+		return nil, fmt.Errorf("no separators given")
+	}
+	for _, sep := range separators {
+		if s[0:1] == sep {
+			return nil, fmt.Errorf("given string starts with a separators")
+		}
+		if s[len(s)-1:] == sep {
+			return nil, fmt.Errorf("given string ends with a separators")
+		}
+	}
 	var res [][]int
-	var start, counter int
-	var list bool
-	var before string
+	var start, par, found int
 	runes := []rune(s)
 	for i, r := range runes {
 		c := string(r)
-		// handle lists
-		if c == "(" && list {
-			// increase counter if nested parentheses
-			counter++
+		// parentheses
+		if c == "(" {
+			par++
 		}
-		if c == "(" && before == "=" {
-			list = true
-		}
-		if c == ")" && list {
-			if counter == 0 {
-				list = false
-			} else {
-				counter--
+		if c == ")" {
+			par--
+			if par < 0 {
+				return nil, fmt.Errorf("parentheses mismatch")
 			}
 		}
-		// found operation
-		if c == ";" || (c == "," && !list) {
-			if i == 0 {
-				return nil, fmt.Errorf("given string '%s' starts with '%s'", s, c)
+		// while par for parentheses is not zero,
+		// don't bother checking if separators was found
+		if par == 0 {
+			for _, sep := range separators {
+				if c == sep {
+					// found part
+					found++
+					res = append(res, []int{start, i})
+					start = i + 1
+					if n > 0 && found == n {
+						// return if found enough parts
+						return res, nil
+					}
+				}
 			}
-			res = append(res, []int{start, i - 1})
-			start = i + 1
+
 		}
-		// remember the current character for the next iteration
-		before = c
 	}
-	end := len(s) - 1
+	// append part after last separators
+	end := len(s)
 	if start < end {
-		res = append(res, []int{start, len(s) - 1})
+		res = append(res, []int{start, end})
 	}
 	return res, nil
 }
@@ -280,261 +304,77 @@ func findOperations(s string) ([][]int, error) {
 // Every location will have two integers, representing the start and end of the block.
 // If n is greater than 0, n locations (from the left) are returned at most.
 func findORs(s string, n int) ([][]int, error) {
-	if n == 0 {
-		return nil, nil
-	}
-	var res [][]int
-	var list bool
-	var before string
-	var start, found, nestedCounter int
-	runes := []rune(s)
-	for i, r := range runes {
-		c := string(r)
-		// handle lists
-		if c == "(" && list {
-			nestedCounter++
-		}
-		if c == "(" && before == "=" {
-			list = true
-		}
-		if c == ")" && list {
-			if nestedCounter == 0 {
-				list = false
-			} else {
-				nestedCounter--
-			}
-		}
-		// found OR
-		if c == "," && !list {
-			if i == 0 {
-				return nil, fmt.Errorf("given string '%s' starts with a comma", s)
-			}
-			res = append(res, []int{start, i - 1})
-			start = i + 1
-			found += 1
-			if n > 0 && found == n {
-				return res, nil
-			}
-		}
-		// remember the current character for the next iteration
-		before = c
-	}
-	res = append(res, []int{start, len(s) - 1})
-	return res, nil
+	return findParts(s, n, ",")
+}
+
+// findANDs finds the locations of all ANDs blocks in the given string.
+// Every location will have two integers, representing the start and end of the block.
+// If n is greater than 0, n locations (from the left) are returned at most.
+func findANDs(s string, n int) ([][]int, error) {
+	return findParts(s, n, ";")
 }
 
 // findOuterParentheses finds indexes of opening and closing parentheses.
 // Every entry will have two integers, the first one providing the index of the
 // opening parentheses, the second one the index of the closing parentheses.
 func findOuterParentheses(s string, n int) ([][]int, error) {
-	var res [][]int
 	if strings.Count(s, "(") != strings.Count(s, ")") {
-		return nil, fmt.Errorf("number of opening and closing parentheses dont match")
+		return nil, fmt.Errorf("number of opening and closing parentheses dont match in string '%s'", s)
 	}
-	start := -1
-	var countFound, countOpening, countClosing, nestedCounter int
-	var list bool
-	var before string
+	var res [][]int
+	var start, par, nested, found int
+	var op bool
 	runes := []rune(s)
 	for i, r := range runes {
 		c := string(r)
-		// found opening
+		// start or part of operator
+		if c == "=" || c == "!" {
+			op = true
+		}
+		// end of operation
+		if (c == "," || c == ";") && nested == 0 {
+			op = false
+		}
+		// opening
 		if c == "(" {
-			if list {
-				nestedCounter++
-				continue
-			}
-			if before != "=" {
-				if start < 0 {
+			if op {
+				nested++
+			} else {
+				if par == 0 {
 					start = i
 				}
-				countOpening += 1
-			} else {
-				list = true
+				par++
 			}
 		}
-		// found closing
-		if c == ")" && start >= 0 {
-			if list {
-				if nestedCounter == 0 {
-					list = false
-				} else {
-					nestedCounter--
+		// closing
+		if c == ")" {
+			if nested > 0 {
+				nested--
+				if nested < 0 {
+					return nil, fmt.Errorf("parentheses mismatch")
 				}
+				continue
 			} else {
-				countClosing += 1
+				par--
 			}
-		}
-		// if outer parentheses found
-		if start >= 0 && countOpening == countClosing {
+			if par > 0 {
+				// we need to find more
+				continue
+			}
+			if par < 0 {
+				return nil, fmt.Errorf("parentheses mismatch")
+			}
+			// found outer parentheses
+			found++
+			op = false
 			res = append(res, []int{start, i})
-			start = -1
-			countOpening = 0
-			countClosing = 0
-			countFound += 1
+			start = i + 1
+			if n > 0 && found == n {
+				// return if found enough parts
+				return res, nil
+			}
+
 		}
-		// if we found enough matching parentheses
-		if n > 0 && countFound == n {
-			return res, nil
-		}
-		// remember the current character for the next iteration
-		before = c
 	}
 	return res, nil
-}
-
-// spreadParentheses resolves all the parentheses within the given string
-// and returns the expanded version.
-func spreadParentheses(s string) (string, error) {
-	parentheses, err := findOuterParentheses(s, -1)
-	if err != nil {
-		return "", fmt.Errorf("unable to determine parentheses: %w", err)
-	}
-	// handle nested parentheses first
-	offset := 0
-	for _, p := range parentheses {
-		start, end := p[0]+offset, p[1]+offset
-		content := s[start+1 : end]
-		nested, err := findOuterParentheses(content, 1)
-		if err != nil {
-			return "", fmt.Errorf("unable to determine parentheses: %w", err)
-		}
-		if len(nested) > 0 {
-			replacement, err := spreadParentheses(content)
-			if err != nil {
-				return s, err
-			}
-			before, after := "", ""
-			if start > 0 {
-				before = s[:start]
-			}
-			if end < len(s)-1 {
-				after = s[end:]
-			}
-			l := len(s)
-			s = before + "(" + replacement + ")" + after
-			offset = len(s) - l
-		}
-	}
-	// from here on, there are no more nested parentheses
-	// we need this for-loop because this function might add
-	// parentheses while processing the string, we do not
-	// want to miss those, this is why we do not loop over
-	// the result of findOuterParentheses directly
-	for {
-		parentheses, err = findOuterParentheses(s, 1)
-		if err != nil {
-			return "", fmt.Errorf("unable to determine parentheses: %w", err)
-		}
-		if len(parentheses) == 0 {
-			// we are done
-			return s, nil
-		}
-		// indexes of our parentheses
-		start, end := parentheses[0][0], parentheses[0][1]
-		// indexes for our replacement
-		before, after := start, end+1
-		// groups for the combination
-		var groups []string
-		// whether we need to add parentheses to our result or not
-		var addParentheses bool
-		// look at the statement before
-		// the parentheses
-		for i := start; i-1 > 0; i-- {
-			// switch character before "("
-			c := s[i-1 : i]
-			// skip whitespace
-			if c == " " {
-				continue
-			}
-			switch c {
-			case ";":
-				// for "AND", look at what comes
-				// before the and
-				for j := i - 1; j > 0; j-- {
-					cc := s[j : j+1]
-					// skip whitespace
-					if cc == " " {
-						continue
-					}
-					locations, err := findORs(s[0:j], -1)
-					if err != nil {
-						return "", fmt.Errorf("unable to split string '%s' into OR-blocks: %w", s, err)
-					}
-					if len(locations) == 0 {
-						return "", fmt.Errorf("invalid rsql statement, empty 'AND' or 'OR' statement in '%s'", s)
-					}
-					before = locations[len(locations)-1][0]
-					groups = append(groups, s[before:j])
-					break
-				}
-			case ",":
-				// nothing to do for "OR"
-			default:
-				return "", fmt.Errorf("unexpected character before parentheses %s: %s", s[start:end], c)
-			}
-			break
-		}
-		// add content to groups
-		content := s[start+1 : end]
-		groups = append(groups, content)
-		// look at the statement after
-		// the parentheses
-		for i := end + 1; i < len(s); i++ {
-			// switch character after ")"
-			c := s[i : i+1]
-			// skip whitespace
-			if c == " " {
-				continue
-			}
-			switch c {
-			case ";":
-				// for "AND", look at what comes
-				// after the and
-				for j := i + 1; j < len(s); j++ {
-					cc := s[j : j+1]
-					// skip whitespace
-					if cc == " " {
-						continue
-					}
-					if cc == "(" {
-						// we will need to add parentheses to our result
-						addParentheses = true
-						// look for closing parentheses
-						for k := j + 1; k < len(s); k++ {
-							ccc := s[k : k+1]
-							if ccc == ")" {
-								after = k + 1
-								groups = append(groups, s[j+1:k])
-								break
-							}
-						}
-					} else {
-						locations, err := findORs(s, 1)
-						if err != nil {
-							return "", fmt.Errorf("unable to split string '%s' into OR-blocks: %w", s, err)
-						}
-						if len(locations) == 0 {
-							return "", fmt.Errorf("invalid rsql statement, empty 'AND' or 'OR' statement in '%s'", s)
-						}
-						after = j + locations[0][1]
-						groups = append(groups, s[j:after])
-					}
-					break
-				}
-			case ",":
-				// nothing to do for "or"
-			default:
-				return "", fmt.Errorf("unexpected character before parentheses %s: %s", s[start:end], c)
-			}
-			break
-		}
-		// combine all groups
-		res := combine(groups...)
-		if addParentheses {
-			res = "(" + res + ")"
-		}
-		// add result
-		s = s[:before] + res + s[after:]
-	}
 }

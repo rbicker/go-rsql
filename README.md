@@ -10,7 +10,8 @@ so RSQL also provides a friendlier syntax for logical operators and some compari
 
 This is a small RSQL helper library, written in golang.
 It can be used to parse a RSQL string and turn it into a database query string.
-Currently, only mongodb is supported.
+
+Currently, only mongodb is supported out of the box (however it is very easy to extend the parser if needed).
 
 # basic usage
 ```go
@@ -23,12 +24,12 @@ import (
 )
 
 func main(){
-	parser, err := rsql.NewParser()
+	parser, err := rsql.NewParser(rsql.Mongo())
 	if err != nil {
 		log.Fatalf("error while creating parser: %s", err)
 	}
 	s := `status=="A",qty=lt=30`
-	res, err := parser.ToMongoQueryString(s)
+	res, err := parser.Process(s)
 	if err != nil {
 		log.Fatalf("error while parsing: %s", err)
 	}
@@ -39,7 +40,6 @@ func main(){
 
 
 # supported operators
-
 The library supports the following basic operators by default:
 
 | Basic Operator | Description         |
@@ -61,8 +61,7 @@ The following table lists two joining operators:
 | ,                  | Logical OR          |
 
 
-# add custom operators
-You can pass custom operators while creating a new parser:
+# advanced usage with custom operators
 ```go
 package main
 
@@ -74,38 +73,48 @@ import (
 )
 
 func main(){
-    // create a custom operator for "exists"- and "all"-operations
+    // create custom operators for "exists"- and "all"-operations
     customOperators := []rsql.Operator{
         {
             Operator:       "=ex=",
-            MongoFormatter: func (key, value string) string {
+            Formatter: func (key, value string) string {
                 return fmt.Sprintf(`{ "%s": { "$exists": %s } }`, key, value)
             },
         },
         {
             Operator:       "=all=",
-            MongoFormatter: func(key, value string) string {
+            Formatter: func(key, value string) string {
                 return fmt.Sprintf(`{ "%s": { "$all": [ %s ] } }`, key, value[1:len(value)-1])
             },
         },
     }
+    // create parser with default mongo operators
+    // plus the two custom operators
     var opts []func(*rsql.Parser) error
+    opts = append(opts, rsql.Mongo())
     opts = append(opts, rsql.WithOperators(customOperators...))
 	parser, err := rsql.NewParser(opts...)
 	if err != nil {
 		log.Fatalf("error while creating parser: %s", err)
 	}
+    // parse string with some default operators
+    res, err := parser.Process(`(a==1;b==2),c=gt=5`)
+	if err != nil {
+		log.Fatalf("error while parsing: %s", err)
+	}
+	log.Println(res)
+	// { "$or": [ { "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }, { "c": { "$gt": 5 } } ] }
     
-    // test custom operator
-	res, err := parser.ToMongoQueryString(`a=ex=true`)
+    // use custom operator =ex=
+	res, err = parser.Process(`a=ex=true`)
 	if err != nil {
 		log.Fatalf("error while parsing: %s", err)
 	}
 	log.Println(res)
 	// { "a": { "$exists": true } }
     
-    // test custom list operator
-	res, err = parser.ToMongoQueryString(`tags=all=('waterproof','rechargeable')`)
+    // use custom list operator =all=
+	res, err = parser.Process(`tags=all=('waterproof','rechargeable')`)
 	if err != nil {
 		log.Fatalf("error while parsing: %s", err)
 	}

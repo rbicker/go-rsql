@@ -48,125 +48,6 @@ func Test_decodeSpecial(t *testing.T) {
 	}
 }
 
-func Test_spreadParentheses(t *testing.T) {
-	tests := []struct {
-		name    string
-		s       string
-		want    string
-		wantErr bool
-	}{
-		{
-			name: "remove all unnecessary parentheses",
-			s:    "((a==1,a==2),(b==1,b==2))",
-			want: "a==1,a==2,b==1,b==2",
-		},
-		{
-			name: "spread simple - 1",
-			s:    "a==1;(b==1,c==1)",
-			want: "a==1;b==1,a==1;c==1",
-		},
-		{
-			name: "spread simple - 2",
-			s:    "(b==1,c==1);a==1",
-			want: "b==1;a==1,c==1;a==1",
-		},
-		{
-			name: "spread two groups",
-			s:    "(a==1,b==1);(c==1,d==1)",
-			want: "a==1;c==1,a==1;d==1,b==1;c==1,b==1;d==1",
-		},
-		{
-			name: "spread three groups",
-			s:    "(a==1,b==1);(c==1,d==1);(e==1,f==1)",
-			want: "a==1;c==1;e==1,a==1;c==1;f==1,a==1;d==1;e==1,a==1;d==1;f==1,b==1;c==1;e==1,b==1;c==1;f==1,b==1;d==1;e==1,b==1;d==1;f==1",
-		},
-		{
-			name: "spread ands and ors",
-			s:    "a==1;(b==1,c==1),d==1",
-			want: "a==1;b==1,a==1;c==1,d==1",
-		},
-		{
-			name: "spread nested",
-			s:    "a==1;(b==1;(c==1;d==1,e==1))",
-			want: "a==1;b==1;c==1;d==1,a==1;b==1;e==1",
-		},
-		{
-			name: "spread while containing nested in operation",
-			s:    "a==1;(x=in=(1,2),b==1)",
-			want: "a==1;x=in=(1,a==1;2),a==1;b==1",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := spreadParentheses(tt.s)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("spreadParentheses() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("spreadParentheses() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_combine(t *testing.T) {
-	tests := []struct {
-		name   string
-		groups []string
-		want   string
-	}{
-		{
-			name: "one group with one element",
-			groups: []string{
-				"a",
-			},
-			want: "a",
-		},
-		{
-			name: "two groups with one element each",
-			groups: []string{
-				"a",
-				"b",
-			},
-			want: "a;b",
-		},
-		{
-			name: "three groups with one element each",
-			groups: []string{
-				"a",
-				"b",
-				"c",
-			},
-			want: "a;b;c",
-		},
-		{
-			name: "two groups with two elements each",
-			groups: []string{
-				"a,b",
-				"c,d",
-			},
-			want: "a;c,a;d,b;c,b;d",
-		},
-		{
-			name: "three groups with two elements each",
-			groups: []string{
-				"a,b",
-				"c,d",
-				"e,f",
-			},
-			want: "a;c;e,a;c;f,a;d;e,a;d;f,b;c;e,b;c;f,b;d;e,b;d;f",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := combine(tt.groups...); got != tt.want {
-				t.Errorf("combine() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func Test_findOuterParentheses(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -182,36 +63,50 @@ func Test_findOuterParentheses(t *testing.T) {
 		},
 		{
 			name: "one",
-			s:    "(x)",
+			s:    "(x==1)",
 			want: [][]int{
 				{
 					0,
-					2,
-				},
-			},
-		},
-		{
-			name: "two",
-			s:    "(x)(y)",
-			want: [][]int{
-				{
-					0,
-					2,
-				},
-				{
-					3,
 					5,
 				},
 			},
 		},
 		{
+			name: "two",
+			s:    "(x==1),(y==1)",
+			want: [][]int{
+				{
+					0,
+					5,
+				},
+				{
+					7,
+					12,
+				},
+			},
+		},
+		{
+			name: "object id",
+			s:    `(a==1),(_id=in=(ObjectId("xxx"),ObjectId("yyy")))`,
+			want: [][]int{
+				{
+					0,
+					5,
+				},
+				{
+					7,
+					48,
+				},
+			},
+		},
+		{
 			name: "two, but only look for one",
-			s:    "(x)(y)",
+			s:    "(x==1),(y==1)",
 			n:    1,
 			want: [][]int{
 				{
 					0,
-					2,
+					5,
 				},
 			},
 		},
@@ -226,12 +121,56 @@ func Test_findOuterParentheses(t *testing.T) {
 			},
 		},
 		{
-			name: "containing invalid list",
+			name: "containing nested list",
 			s:    "(y==2),x=in=(1,(2),3)",
 			want: [][]int{
 				{
 					0,
 					5,
+				},
+			},
+		},
+		{
+			name: "at beginning",
+			s:    "(b==1,c==1);a==1",
+			want: [][]int{
+				{
+					0,
+					10,
+				},
+			},
+		},
+		{
+			name: "at end",
+			s:    "a==1;(b==1,c==1)",
+			want: [][]int{
+				{
+					5,
+					15,
+				},
+			},
+		},
+		{
+			name: "nested",
+			s:    "((a==1,a==2),(b==1,b==2))",
+			want: [][]int{
+				{
+					0,
+					24,
+				},
+			},
+		},
+		{
+			name: "nested part 2",
+			s:    "(a==1,a==2),(b==1,b==2)",
+			want: [][]int{
+				{
+					0,
+					10,
+				},
+				{
+					12,
+					22,
 				},
 			},
 		},
@@ -250,7 +189,7 @@ func Test_findOuterParentheses(t *testing.T) {
 	}
 }
 
-func TestParser_ToMongoQueryString(t *testing.T) {
+func TestParser_ProcessMongo(t *testing.T) {
 	tests := []struct {
 		name            string
 		s               string
@@ -259,17 +198,7 @@ func TestParser_ToMongoQueryString(t *testing.T) {
 		wantErr         bool
 	}{
 		{
-			name:    "parentheses not matching",
-			s:       "(a==1",
-			wantErr: true,
-		},
-		{
-			name:    "parentheses not matching with escaping",
-			s:       `(a=='this is what I am looking for \)`,
-			wantErr: true,
-		},
-		{
-			name: "empty filter",
+			name: "empty",
 			s:    "",
 			want: "{ }",
 		},
@@ -304,17 +233,62 @@ func TestParser_ToMongoQueryString(t *testing.T) {
 			want: `{ "a": { "$lte": 1 } }`,
 		},
 		{
-			name: "complex query",
-			s:    `status=="A",qty=lt=30`,
-			want: `{ "$or": [ { "status": { "$eq": "A" } }, { "qty": { "$lt": 30 } } ] }`,
+			name: "=in=",
+			s:    "a=in=(1,2,3)",
+			want: `{ "a": { "$in": 1,2,3 } }`,
 		},
 		{
-			name: "custom Operator: =ex=",
+			name: "=out=",
+			s:    "a=out=(1,2,3)",
+			want: `{ "a": { "$nin": 1,2,3 } }`,
+		},
+		{
+			name: "(a==1)",
+			s:    "(a==1)",
+			want: `{ "a": { "$eq": 1 } }`,
+		},
+		{
+			name: "a==1;b==2",
+			s:    "a==1;b==2",
+			want: `{ "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }`,
+		},
+		{
+			name: "a==1,b==2",
+			s:    "a==1,b==2",
+			want: `{ "$or": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }`,
+		},
+		{
+			name: "a==1;b==2,c==1",
+			s:    "a==1;b==2,c==1",
+			want: `{ "$or": [ { "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }, { "c": { "$eq": 1 } } ] }`,
+		},
+		{
+			name: "(a==1;b==2),c=gt=5",
+			s:    "(a==1;b==2),c=gt=5",
+			want: `{ "$or": [ { "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }, { "c": { "$gt": 5 } } ] }`,
+		},
+		{
+			name: "c==1,(a==1;b==2)",
+			s:    "c==1,(a==1;b==2)",
+			want: `{ "$or": [ { "c": { "$eq": 1 } }, { "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] } ] }`,
+		},
+		{
+			name: "a==1;(b==1,c==2)",
+			s:    "a==1;(b==1,c==2)",
+			want: `{ "$and": [ { "a": { "$eq": 1 } }, { "$or": [ { "b": { "$eq": 1 } }, { "c": { "$eq": 2 } } ] } ] }`,
+		},
+		{
+			name: "(a==1,b==1);(c==1,d==2)",
+			s:    "(a==1,b==1);(c==1,d==2)",
+			want: `{ "$and": [ { "$or": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 1 } } ] }, { "$or": [ { "c": { "$eq": 1 } }, { "d": { "$eq": 2 } } ] } ] }`,
+		},
+		{
+			name: "custom operator: =ex=",
 			s:    "a=ex=true",
 			customOperators: []Operator{
 				{
 					Operator: "=ex=",
-					MongoFormatter: func(key, value string) string {
+					Formatter: func(key, value string) string {
 						return fmt.Sprintf(`{ "%s": { "$exists": %s } }`, key, value)
 					},
 				},
@@ -322,12 +296,12 @@ func TestParser_ToMongoQueryString(t *testing.T) {
 			want: `{ "a": { "$exists": true } }`,
 		},
 		{
-			name: "custom list Operator: =all=",
+			name: "custom list operator: =all=",
 			s:    "tags=all=('waterproof','rechargeable')",
 			customOperators: []Operator{
 				{
 					Operator: "=all=",
-					MongoFormatter: func(key, value string) string {
+					Formatter: func(key, value string) string {
 
 						return fmt.Sprintf(`{ "%s": { "$all": [ %s ] } }`, key, value[1:len(value)-1])
 					},
@@ -339,15 +313,110 @@ func TestParser_ToMongoQueryString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var opts []func(*Parser) error
+			opts = append(opts, Mongo())
 			opts = append(opts, WithOperators(tt.customOperators...))
-			parser, _ := NewParser(opts...)
-			got, err := parser.ToMongoQueryString(tt.s)
+			parser, err := NewParser(opts...)
+			if err != nil {
+				t.Fatalf("error while creating parser: %s", err)
+			}
+			got, err := parser.Process(tt.s)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ToMongoQueryString() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Process() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.want {
-				t.Errorf("ToMongoQueryString() got = %v, want %v", got, tt.want)
+				t.Errorf("Process() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_findParts(t *testing.T) {
+	tests := []struct {
+		name       string
+		s          string
+		n          int
+		separators []string
+		want       [][]int
+		wantErr    bool
+	}{
+		{
+			name: "empty",
+			s:    "",
+			n:    -1,
+		},
+		{
+			name:    "no separators",
+			s:       "(a==1),(b==1)",
+			n:       -1,
+			wantErr: true,
+		},
+		{
+			name:       "start with separators",
+			s:          ",(a==1),(b==1)",
+			n:          -1,
+			separators: []string{","},
+			wantErr:    true,
+		},
+		{
+			name:       "end with separators",
+			s:          "(a==1),(b==1),",
+			n:          -1,
+			separators: []string{","},
+			wantErr:    true,
+		},
+		{
+			name:       "parentheses mismatch",
+			s:          "(a==1)),(b==1)",
+			n:          -1,
+			separators: []string{","},
+			wantErr:    true,
+		},
+		{
+			name:       "parentheses mismatch in operation",
+			s:          "a=in=(1),2,3)",
+			n:          -1,
+			separators: []string{","},
+			wantErr:    true,
+		},
+		{
+			name:       "nested",
+			s:          "((a==1),(b==1)),(c==1)",
+			n:          -1,
+			separators: []string{","},
+			want: [][]int{
+				{
+					0,
+					15,
+				},
+				{
+					16,
+					22,
+				},
+			},
+		},
+		{
+			name:       "return one",
+			s:          "(a==1),(b==1)",
+			n:          1,
+			separators: []string{","},
+			want: [][]int{
+				{
+					0,
+					6,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := findParts(tt.s, tt.n, tt.separators...)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("findParts = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("findParts() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -362,60 +431,17 @@ func Test_findORs(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "n is zero",
-			s:    "(a==1),(b==1)",
-			n:    0,
-			want: nil,
-		},
-		{
-			name:    "start string with a comma",
-			s:       ",(a==1),(b==1)",
-			n:       1,
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "nested parentheses in list operation",
-			s:    `(a==1),(_id=in=(ObjectId("xxx"),(ObjectId("yyy"))`,
-			n:    -1,
-			want: [][]int{
-				{
-					0,
-					5,
-				},
-				{
-					7,
-					48,
-				},
-			},
-		},
-		{
 			name: "simple or",
 			s:    "(a==1),(b==1)",
 			n:    -1,
 			want: [][]int{
 				{
 					0,
-					5,
+					6,
 				},
 				{
 					7,
-					12,
-				},
-			},
-		},
-		{
-			name: "list operation",
-			s:    "(a==1),(b=in=(1,2,3))",
-			n:    -1,
-			want: [][]int{
-				{
-					0,
-					5,
-				},
-				{
-					7,
-					20,
+					13,
 				},
 			},
 		},
@@ -434,85 +460,39 @@ func Test_findORs(t *testing.T) {
 	}
 }
 
-func Test_findOperations(t *testing.T) {
+func Test_findANDs(t *testing.T) {
 	tests := []struct {
 		name    string
 		s       string
+		n       int
 		want    [][]int
 		wantErr bool
 	}{
 		{
-			name:    "start with split Operator",
-			s:       ";a==1,b==2",
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "nested parentheses in list",
-			s:    "a==1,b=in=(1,(2),3)",
+			name: "simple and",
+			s:    "(a==1);(b==1)",
+			n:    -1,
 			want: [][]int{
 				{
 					0,
-					3,
+					6,
 				},
 				{
-					5,
-					18,
-				},
-			},
-		},
-		{
-			name: "simple",
-			s:    "a==1,b!=2",
-			want: [][]int{
-				{
-					0,
-					3,
-				},
-				{
-					5,
-					8,
-				},
-			},
-		},
-		{
-			name: "list",
-			s:    "a==1,b=in=(1,2,3)",
-			want: [][]int{
-				{
-					0,
-					3,
-				},
-				{
-					5,
-					16,
-				},
-			},
-		},
-		{
-			name: "object id",
-			s:    `a==1,_id==ObjectId("xxx")`,
-			want: [][]int{
-				{
-					0,
-					3,
-				},
-				{
-					5,
-					24,
+					7,
+					13,
 				},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := findOperations(tt.s)
+			got, err := findANDs(tt.s, tt.n)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("findOperations() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("findANDs() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("findOperations() got = %v, want %v", got, tt.want)
+				t.Errorf("findANDs() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
