@@ -61,7 +61,10 @@ The following table lists two joining operators:
 | ,                  | Logical OR          |
 
 
-# advanced usage with custom operators
+# advanced usage 
+
+## custom operators
+The library makes it easy to define custom operators:
 ```go
 package main
 
@@ -120,5 +123,61 @@ func main(){
 	}
 	log.Println(res)
 	// { "tags": { "$all": [ 'waterproof','rechargeable' ] } }
+}
+```
+
+## transform keys
+If your database key naming scheme is different from the one used in your rsql statements, you can add functions to transform your keys.
+
+```go
+package main
+
+import (
+	"github.com/rbicker/go-rsql"
+	"log"
+	"strings"
+)
+
+func main() {
+	transformer := func(s string) string {
+		return strings.ToUpper(s)
+	}
+	parser, err := rsql.NewParser(rsql.Mongo(), rsql.WithKeyTransformers(transformer))
+	if err != nil {
+		log.Fatalf("error while creating parser: %s", err)
+	}
+	s := `status=="a",qty=lt=30`
+	res, err := parser.Process(s)
+	if err != nil {
+		log.Fatalf("error while parsing: %s", err)
+	}
+	log.Println(res)
+	// { "$or": [ { "STATUS": { "$eq": "a" } }, { "QTY": { "$lt": 30 } } ] }
+}
+```
+
+## define allowed or forbidden keys
+```go
+package main
+
+import (
+	"github.com/rbicker/go-rsql"
+	"log"
+)
+
+func main() {
+	parser, err := rsql.NewParser(rsql.Mongo())
+	if err != nil {
+		log.Fatalf("error while creating parser: %s", err)
+	}
+	s := `status=="a",qty=lt=30`
+	_, err = parser.Process(s, rsql.SetAllowedKeys([]string{"status, qty"}))
+	// -> ok
+	_, err = parser.Process(s, rsql.SetAllowedKeys([]string{"status"}))
+	// -> error
+	_, err = parser.Process(s, rsql.SetForbiddenKeys([]string{"status"}))
+	// -> error
+	_, err = parser.Process(s, rsql.SetAllowedKeys([]string{"age"}))
+	// -> ok
 }
 ```
