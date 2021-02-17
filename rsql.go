@@ -31,9 +31,10 @@ type Operator struct {
 
 // Parser represents a RSQL parser.
 type Parser struct {
-	operators    []Operator
-	andFormatter func(ss []string) string
-	orFormatter  func(ss []string) string
+	operators       []Operator
+	andFormatter    func(ss []string) string
+	orFormatter     func(ss []string) string
+	keyTransformers []func(s string) string
 }
 
 // NewParser returns a new rsql server.
@@ -152,6 +153,14 @@ func WithOperators(operators ...Operator) func(parser *Parser) error {
 	}
 }
 
+// WithKeyTransformers adds functions to alter key names in any way.
+func WithKeyTransformers(transformers ...func(string) string) func(parser *Parser) error {
+	return func(parser *Parser) error {
+		parser.keyTransformers = append(parser.keyTransformers, transformers...)
+		return nil
+	}
+}
+
 // ProcessOptions contains options for the parser's Process function.
 type ProcessOptions struct {
 	allowedKeys   []string
@@ -241,6 +250,10 @@ func (parser *Parser) Process(s string, options ...func(*ProcessOptions) error) 
 			value := reValue.FindString(content)
 			if operator == "" || key == "" || value == "" {
 				return "", fmt.Errorf("incomplete operation '%s'", content)
+			}
+			// run key transformers
+			for _, t := range parser.keyTransformers {
+				key = t(key)
 			}
 			// check if key is allowed
 			if containsString(opts.forbiddenKeys, key) {
