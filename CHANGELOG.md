@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.0] - 2021-02-17
 ### Added
 * added process options to define to allow or disallow specific keys.
+* added key transformers.
 
 ## [0.2.0] - 2020-05-29
 ### Changed
