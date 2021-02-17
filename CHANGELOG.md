@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2021-02-17
+### Added
+* added process options to define to allow or disallow specific keys.
+
 ## [0.2.0] - 2020-05-29
 ### Changed
 * mongodb related logical and query operators are now provided as "formatter-functions".
@@ -13,9 +17,9 @@ This makes the parser much more flexible, however the `Mongo()`-function needs t
 
 ## [0.1.0] - 2020-05-28
 ### Changed
-* Custom Operators can now define MongoFormatter as a function instead of a MongoOperator string to increase the flexibility
+* custom operators can now define MongoFormatter as a function instead of a MongoOperator string to increase the flexibility
 ### Fixed
-* Allow nested parentheses, so it is possible to define filters like: userIds=in=(ObjectId("xxx"),ObjectId("yyy"))
+* allow nested parentheses, so it is possible to define filters like: userIds=in=(ObjectId("xxx"),ObjectId("yyy"))
 
 ## [0.0.2] - 2020-05-23
 ### Added

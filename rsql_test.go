@@ -189,6 +189,69 @@ func Test_findOuterParentheses(t *testing.T) {
 	}
 }
 
+func TestParser_ProcessOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		s       string
+		opts    []func(*ProcessOptions) error
+		wantErr bool
+	}{
+		{
+			name:    "all keys allowed",
+			s:       "a==1",
+			opts:    []func(*ProcessOptions) error{},
+			wantErr: false,
+		},
+		{
+			name: "key allowed",
+			s:    "a==1",
+			opts: []func(*ProcessOptions) error{
+				SetAllowedKeys([]string{"a"}),
+			},
+			wantErr: false,
+		},
+		{
+			name: "key not allowed",
+			s:    "a==1",
+			opts: []func(*ProcessOptions) error{
+				SetAllowedKeys([]string{"b"}),
+			},
+			wantErr: true,
+		},
+		{
+			name: "key forbidden",
+			s:    "a==1",
+			opts: []func(*ProcessOptions) error{
+				SetForbiddenKeys([]string{"a"}),
+			},
+			wantErr: true,
+		},
+		{
+			name: "key not forbidden",
+			s:    "a==1",
+			opts: []func(*ProcessOptions) error{
+				SetForbiddenKeys([]string{"b"}),
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var opts []func(*Parser) error
+			opts = append(opts, Mongo())
+			parser, err := NewParser(opts...)
+			if err != nil {
+				t.Fatalf("error while creating parser: %s", err)
+			}
+			_, err = parser.Process(tt.s, tt.opts...)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Process() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+		})
+	}
+}
+
 func TestParser_ProcessMongo(t *testing.T) {
 	tests := []struct {
 		name            string

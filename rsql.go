@@ -152,8 +152,48 @@ func WithOperators(operators ...Operator) func(parser *Parser) error {
 	}
 }
 
+// ProcessOptions contains options for the parser's Process function.
+type ProcessOptions struct {
+	allowedKeys   []string
+	forbiddenKeys []string
+}
+
+// SetAllowedKeys set's the keys which can be used for querying.
+func SetAllowedKeys(keys []string) func(opts *ProcessOptions) error {
+	return func(opts *ProcessOptions) error {
+		opts.allowedKeys = keys
+		return nil
+	}
+}
+
+// SetForbiddenKeys set's the keys which must not be used for querying.
+func SetForbiddenKeys(keys []string) func(opts *ProcessOptions) error {
+	return func(opts *ProcessOptions) error {
+		opts.forbiddenKeys = keys
+		return nil
+	}
+}
+
+// containsString checks if a given slice of strings contains a given string.
+func containsString(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
 // Process takes the given string and processes it using parser's operators.
-func (parser *Parser) Process(s string) (string, error) {
+func (parser *Parser) Process(s string, options ...func(*ProcessOptions) error) (string, error) {
+	// set process options
+	opts := ProcessOptions{}
+	for _, op := range options {
+		err := op(&opts)
+		if err != nil {
+			return "", fmt.Errorf("setting process option failed: %w", err)
+		}
+	}
 	// regex to match identifier within operation, before the equal or expression mark
 	var reKey = regexp.MustCompile(`^[^=!]+`)
 	// regex to match value within the operation, after the equal sign
@@ -200,7 +240,14 @@ func (parser *Parser) Process(s string) (string, error) {
 			key := reKey.FindString(content)
 			value := reValue.FindString(content)
 			if operator == "" || key == "" || value == "" {
-				return s, fmt.Errorf("incomplete operation '%s'", content)
+				return "", fmt.Errorf("incomplete operation '%s'", content)
+			}
+			// check if key is allowed
+			if containsString(opts.forbiddenKeys, key) {
+				return "", fmt.Errorf("given key '%s' is not allowed", key)
+			}
+			if len(opts.allowedKeys) > 0 && !containsString(opts.allowedKeys, key) {
+				return "", fmt.Errorf("given key '%s' is not allowed", key)
 			}
 			// parse operation
 			var res string
