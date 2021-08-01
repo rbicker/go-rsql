@@ -34,7 +34,7 @@ func main(){
 		log.Fatalf("error while parsing: %s", err)
 	}
 	log.Println(res)
-	// { "$or": [ { "status": { "$eq": "A" } }, { "qty": { "$lt": 30 } } ] }
+	// { "$or": [ { "status": "A" }, { "qty": { "$lt": 30 } } ] }
 }
 ```
 
@@ -106,7 +106,7 @@ func main(){
 		log.Fatalf("error while parsing: %s", err)
 	}
 	log.Println(res)
-	// { "$or": [ { "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }, { "c": { "$gt": 5 } } ] }
+	// { "$or": [ { "$and": [ { "a": 1 }, { "b": 2 } ] }, { "c": { "$gt": 5 } } ] }
     
     // use custom operator =ex=
 	res, err = parser.Process(`a=ex=true`)
@@ -152,7 +152,7 @@ func main() {
 		log.Fatalf("error while parsing: %s", err)
 	}
 	log.Println(res)
-	// { "$or": [ { "STATUS": { "$eq": "a" } }, { "QTY": { "$lt": 30 } } ] }
+	// { "$or": [ { "STATUS": "a" }, { "QTY": { "$lt": 30 } } ] }
 }
 ```
 

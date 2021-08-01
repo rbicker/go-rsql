@@ -208,7 +208,7 @@ func TestParser_ProcessMongo(t *testing.T) {
 		{
 			name: "==",
 			s:    "a==1",
-			want: `{ "a": { "$eq": 1 } }`,
+			want: `{ "a": 1 }`,
 		},
 		{
 			name: "!=",
@@ -248,42 +248,42 @@ func TestParser_ProcessMongo(t *testing.T) {
 		{
 			name: "(a==1)",
 			s:    "(a==1)",
-			want: `{ "a": { "$eq": 1 } }`,
+			want: `{ "a": 1 }`,
 		},
 		{
 			name: "a==1;b==2",
 			s:    "a==1;b==2",
-			want: `{ "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }`,
+			want: `{ "$and": [ { "a": 1 }, { "b": 2 } ] }`,
 		},
 		{
 			name: "a==1,b==2",
 			s:    "a==1,b==2",
-			want: `{ "$or": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }`,
+			want: `{ "$or": [ { "a": 1 }, { "b": 2 } ] }`,
 		},
 		{
 			name: "a==1;b==2,c==1",
 			s:    "a==1;b==2,c==1",
-			want: `{ "$or": [ { "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }, { "c": { "$eq": 1 } } ] }`,
+			want: `{ "$or": [ { "$and": [ { "a": 1 }, { "b": 2 } ] }, { "c": 1 } ] }`,
 		},
 		{
 			name: "(a==1;b==2),c=gt=5",
 			s:    "(a==1;b==2),c=gt=5",
-			want: `{ "$or": [ { "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] }, { "c": { "$gt": 5 } } ] }`,
+			want: `{ "$or": [ { "$and": [ { "a": 1 }, { "b": 2 } ] }, { "c": { "$gt": 5 } } ] }`,
 		},
 		{
 			name: "c==1,(a==1;b==2)",
 			s:    "c==1,(a==1;b==2)",
-			want: `{ "$or": [ { "c": { "$eq": 1 } }, { "$and": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 2 } } ] } ] }`,
+			want: `{ "$or": [ { "c": 1 }, { "$and": [ { "a": 1 }, { "b": 2 } ] } ] }`,
 		},
 		{
 			name: "a==1;(b==1,c==2)",
 			s:    "a==1;(b==1,c==2)",
-			want: `{ "$and": [ { "a": { "$eq": 1 } }, { "$or": [ { "b": { "$eq": 1 } }, { "c": { "$eq": 2 } } ] } ] }`,
+			want: `{ "$and": [ { "a": 1 }, { "$or": [ { "b": 1 }, { "c": 2 } ] } ] }`,
 		},
 		{
 			name: "(a==1,b==1);(c==1,d==2)",
 			s:    "(a==1,b==1);(c==1,d==2)",
-			want: `{ "$and": [ { "$or": [ { "a": { "$eq": 1 } }, { "b": { "$eq": 1 } } ] }, { "$or": [ { "c": { "$eq": 1 } }, { "d": { "$eq": 2 } } ] } ] }`,
+			want: `{ "$and": [ { "$or": [ { "a": 1 }, { "b": 1 } ] }, { "$or": [ { "c": 1 }, { "d": 2 } ] } ] }`,
 		},
 		{
 			name: "custom operator: =ex=",
@@ -317,7 +317,7 @@ func TestParser_ProcessMongo(t *testing.T) {
 			s:       "a==1",
 			options: []func(*ProcessOptions) error{},
 			wantErr: false,
-			want:    `{ "a": { "$eq": 1 } }`,
+			want:    `{ "a": 1 }`,
 		},
 		{
 			name: "key allowed",
@@ -326,7 +326,7 @@ func TestParser_ProcessMongo(t *testing.T) {
 				SetAllowedKeys([]string{"a"}),
 			},
 			wantErr: false,
-			want:    `{ "a": { "$eq": 1 } }`,
+			want:    `{ "a": 1 }`,
 		},
 		{
 			name: "key not allowed",
@@ -353,7 +353,7 @@ func TestParser_ProcessMongo(t *testing.T) {
 				SetForbiddenKeys([]string{"b"}),
 			},
 			wantErr: false,
-			want:    `{ "a": { "$eq": 1 } }`,
+			want:    `{ "a": 1 }`,
 		},
 		{
 			name: "uppercase key transformer",
@@ -364,7 +364,7 @@ func TestParser_ProcessMongo(t *testing.T) {
 				},
 			},
 			wantErr: false,
-			want:    `{ "A": { "$eq": 1 } }`,
+			want:    `{ "A": 1 }`,
 		},
 	}
 	for _, tt := range tests {

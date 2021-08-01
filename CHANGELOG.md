@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2021-08-01
+### Changed
+* the equal query operator for mongodb is formatted as { "key": value } instead of { "key": { "$eq": value } } to provide more flexibility 
+
 ## [0.3.0] - 2021-02-17
 ### Added
 * added process options to define to allow or disallow specific keys.

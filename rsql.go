@@ -65,7 +65,7 @@ func Mongo() func(parser *Parser) error {
 			{
 				"==",
 				func(key, value string) string {
-					return fmt.Sprintf(`{ "%s": { "$eq": %s } }`, key, value)
+					return fmt.Sprintf(`{ "%s": %s }`, key, value)
 				},
 			},
 			{
